@@ -1,0 +1,1182 @@
+<?php
+
+define ("EMPTY_CHOICE", "< any >");
+
+/** 
+ * implementation of hook_menu
+*/
+function artspan_member_profile_menu() {
+
+  $items = array();
+  $items['art'] =
+    array(
+    'title' => t('Artist Search'),
+    'description' => 'Search for Artist Profiles',
+    'page callback' => 'artspan_member_profile_search_page',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+    );
+
+  $items['artist'] =
+    array(
+    'title' => t('Artist Profile'),
+    'description' => 'Artist Profile Page',
+    'page callback' => 'artspan_member_profile_page',
+    'access arguments' => array('access content'),
+    'type' => MENU_CALLBACK,
+    );
+
+
+
+  return $items;
+}
+
+/**
+ * Implements hook_form_alter().
+ */
+function artspan_member_profile_form_alter(&$form, &$form_state) {
+  if ($form['#id'] == 'views-exposed-form-artist-profile-search-page') {
+    civicrm_initialize();
+    
+    //unset the one form item from teh view, we will make all of our filters
+    //be custom to make layout more consistent
+    unset($form['uid']);    
+
+    $mediums = $styles = $weekends = $neighborhoods = $studio_buildings = 
+      array();
+
+    artspan_member_profile_search_options($mediums, $styles, $weekends,
+            $neighborhoods, $studio_buildings);
+
+    $total = count($weekends);
+    $counter = 1;
+    foreach($weekends as $field_key=>$label) {
+      $field_name = 'artspan_profile_weekend_'.$field_key;
+      $weekend = 
+        filter_input(INPUT_GET, $field_name) ? 
+        filter_input(INPUT_GET, $field_name) : 0;
+
+
+      if ($counter == 1) {
+        $prefix = "<div id='artspan_weekend_search' class='of-filter'><label>".t("SFOS 2019 Weekend")."</label>";
+        $suffix = "</div>";
+      }
+      else if ($counter == $total) {
+        $prefix = "<div class='last'>";
+        $suffix = "</div>";
+      }
+      else { 
+        $prefix = "<div class='middle'>";
+        $suffix = "</div>";
+      }
+
+      $form[$field_name] = array(
+        '#type' => 'checkbox',
+        '#title' => $label,
+        '#default_value' => $weekend,
+        '#prefix' => $prefix,
+        '#suffix' => $suffix,
+
+        );
+      $counter ++;
+    }
+
+    $neighborhood = 
+      filter_input(INPUT_GET, 'artspan_profile_search_neighborhood') ? 
+      filter_input(INPUT_GET, 'artspan_profile_search_neighborhood') : 0;
+   
+    $form['artspan_profile_search_neighborhood'] = 
+      array(
+      '#type' => 'select', 
+      '#title' => "<div id='artspan_neighborhood_search' class='of-filter'><label>".t('SFOS Neighborhood')."</label></div>",
+      '#options' => $neighborhoods,
+      '#required' => FALSE, 
+      '#default_value' => $neighborhood,
+      '#prefix' => "<div>",
+      '#suffix' => "</div>",
+
+      );
+
+
+ 
+    $studio_building = 
+      filter_input(INPUT_GET, 'artspan_profile_search_studio_building') ? 
+      filter_input(INPUT_GET, 'artspan_profile_search_studio_building') : 0;
+   
+    $form['artspan_profile_search_studio_building'] =
+      array(
+      '#type' => 'select', 
+      '#title' => "<div id='artspan_studio_building_search'>".t('SFOS Studio Building')."</div>",
+      '#options' => $studio_buildings,
+      '#required' => FALSE, 
+      '#default_value' => $studio_building,
+      '#prefix' => "<div>",
+      '#suffix' => "</div>",
+      );
+    
+    $form['submit']['#weight'] = 100;
+    $form['submit']['#prefix'] = 
+      "</div><div class='divider'></div><div class='views-exposed-widget views-submit-button fill-left'>";
+    $form['submit']['#suffix'] = "</div><div>";
+    $form['submit']['#value'] = t("Search");
+    // Note the backwards <div>s around the search button. It's a bit ugly, but it moves the search button out of the filter in the markup, allowing it to sit next to the reset button. 
+  } else if ($form['#id'] == 'user-register-form') { 
+    $form['account']['name']['#description'] .= "<br/><strong><i>".
+      t("Your username will be used for the URL of your Public ".
+      "Artist Profile Page so please choose carefully. We suggest using ".
+      "your Artist Name (FirstNameLastName) as your username. You will ".
+      "not be able to change it later.")."</i></strong>";
+    
+  } else if (isset($form['#node_edit_form']) && $form['#node_edit_form']  && 
+     $form['#form_id'] == 'artwork_node_form') { 
+    $form['field_dimensions'][LANGUAGE_NONE][0]['#description'] = t("Height");
+    $form['field_dimensions'][LANGUAGE_NONE][0]['value']['#description'] 
+      = t("Height");
+    $form['field_dimensions'][LANGUAGE_NONE][1]['#description'] = t("Width");
+    $form['field_dimensions'][LANGUAGE_NONE][1]['value']['#description'] = 
+      t("Width");
+    $form['field_dimensions'][LANGUAGE_NONE][2]['#description'] = t("Depth");
+    $form['field_dimensions'][LANGUAGE_NONE][2]['value']['#description'] = 
+      t("Depth");
+  }
+
+
+}
+
+function artspan_member_profile_search_options(&$mediums, &$styles, &$weekends,
+                 &$neighborhoods, 
+                 &$studio_buildings) {
+  //fetch civcirm mediums
+  //FIXME, ADD THIS VARIABLE TO A SETTINGS FORM
+  $group_option_id = 
+    variable_get('artspan_member_profile_medium_option_group_id', 70);
+  $result = civicrm_api3('OptionValue', 'get', array(
+                 'sequential' => 1,
+                 'option_group_id' => 
+                 $group_option_id,
+                 ));
+  $mediums = array();
+  if ($result && isset($result['values']) && $result['values']) {
+    foreach ($result['values'] as $option_group_value) {
+      $mediums[$option_group_value['id']] = $option_group_value['label'];
+    }
+  }
+
+  //fetch civi styles
+  $group_option_id = 
+    variable_get('artspan_member_profile_styles_option_group_id', 188);
+  $result = civicrm_api3('OptionValue', 'get', array(
+                 'sequential' => 1,
+                 'option_group_id' => 
+                 $group_option_id,
+                 ));
+  $styles = array();
+  if ($result && isset($result['values']) && $result['values']) {
+    foreach ($result['values'] as $option_group_value) {
+      $styles[$option_group_value['id']] = $option_group_value['label'];
+    }
+  }
+  
+  $all_fields = field_info_fields();
+  $weekends = 
+    list_allowed_values($all_fields["field_studioevent_weekend"]);
+  
+  $fields = array(
+      'field_studioevent_weekend1_hood',
+      'field_studioevent_weekend2_hood',
+      'field_studioevent_weekend3_hood',
+      'field_studioevent_weekend4_hood',
+      );
+  
+  $neighborhoods = array();
+  $counter = 1;
+  foreach ($fields as $field) {
+    $allowed_values = array_merge(list_allowed_values($all_fields[$field]));
+    foreach($allowed_values as $key => $neighborhood) {
+      $allowed_values[$key] = $neighborhood . " -- Weekend $counter";
+    }
+    $neighborhoods = array_merge($neighborhoods, $allowed_values);
+    $counter ++;
+  }
+  asort($neighborhoods);
+  $neighborhoods = array_merge(array('0'=>EMPTY_CHOICE), $neighborhoods);
+    
+  //FETCH ALL THE STUDIO CONTACTS 
+  $studio_contacts = 
+    artspan_member_dashboard_get_civi_objects('Contact', TRUE, 
+            array('contact_sub_type'=> 
+                  'Group_Studio_Site',
+                  'studio_buildings' =>
+                  array('limit'=>500,
+                  'sort'=>
+                  'display_name')));
+
+  $studio_contacts = artspan_member_dashboard_get_non_filtered_group_studios();
+
+  $studio_buildings = array(0=>EMPTY_CHOICE);
+  foreach($studio_contacts as $id=>$name) {
+    $studio_buildings[$id] = $name;
+  }
+}
+
+function artspan_member_profile_get_cache($uid) {
+  global $artspan_profile_cache;
+
+  $artspan_profile_cache = !isset($artspan_profile_cache) ? 
+    $artspan_profile_cache : array();
+
+  if (isset($artspan_profile_cache[$uid])) {
+    return $artspan_profile_cache[$uid];
+  }
+
+  $sql = "SELECT * FROM artspan_member_profile_cache where uid = :uid";
+  $results = db_query($sql, array(':uid'=>$uid));
+  while ($result = $results->fetchObject()) {
+    $artspan_profile_cache[$uid] = $result;
+    return $result;
+  }
+  return NULL;
+}
+
+
+function artspan_member_profile_public_artwork_field($row) {
+  $profile = artspan_member_profile_get_cache($row->uid);
+  $fid = $profile->image_fid;
+
+  $image = '';
+  if ($fid) {
+    $image =  theme('image_style', array('path' => file_load($fid)->uri, 
+           'alt' => t('Missing Image'), 
+           'style_name' => 'search-image'));
+  }
+  else {
+    $path ='sites/default/files/default_images/header-art-artwork-default.jpg';
+    $path = 'sites/default/files/default_images/artist-search-image-default-390-wcanvas.jpg';
+    $image = theme_image(array('path'=>$path));
+
+  }
+  return $image;
+}
+
+
+function artspan_member_profile_public_artist_name_field($row) {
+  $profile = artspan_member_profile_get_cache($row->uid);
+  $text = $profile->public_artist_name ? $profile->public_artist_name :
+    $profile->display_name;
+  
+  if (strlen($text) >= 22) {
+    $text = substr($text, 0, 22)."...";
+  }
+  if (!$text) {
+    $text = "Artist";
+  }
+  return trim($text);
+}
+
+function artspan_member_profile_medium_field($row) {
+  $profile = artspan_member_profile_get_cache($row->uid);
+  $text = $profile->medium_string;
+  return str_replace('  ', ', ', trim($text));
+}
+
+function artspan_member_profile_style_field($row) {
+  $profile = artspan_member_profile_get_cache($row->uid);
+  $text = $profile->style_string;
+  return str_replace('  ', ', ', trim($text));
+}
+
+function artspan_member_profile_studio_event_field($row) {
+  $profile = artspan_member_profile_get_cache($row->uid);
+
+  $text = $profile->weekend_string."<br/>".
+    $profile->neighborhood_string."<br/>".
+    $profile->studio_building_string  ;
+  return $text;
+}
+
+function artspan_member_profile_search_page() {
+  $query_array = array();
+  foreach ($_GET as $key=>$value) {
+    if ($value) {
+      $query_array[$key] = $value;
+    }
+  }
+  if (count($query_array) < count($_GET)) {
+    unset($query_array['q']);
+    drupal_goto('art', array('query' => $query_array));
+    return;
+  }
+
+  civicrm_initialize();
+  $sql = "";
+
+  $mediums = $styles = $weekends = $neighborhoods = $studio_buildings = 
+    array();
+  
+  artspan_member_profile_search_options($mediums, $styles, $weekends,
+          $neighborhoods, $studio_buildings);
+
+
+  $sql = "SELECT uid FROM artspan_member_profile_cache WHERE uid > 0 ";
+
+  /////////////////////////////////////////////////////////////////////////
+  //ARTIST NAME/KEYWORD SEARCH
+  $search_text = filter_input(INPUT_GET, 'artspan_profile_search_artist_name');
+  if ($search_text) {
+    $needles = explode(' ', $search_text);
+    $sql .= " AND (";
+    $is_first = TRUE;
+    foreach ($needles as $needle) {
+      $needle = strtolower($needle);
+      if ($is_first) {
+  $is_first = FALSE;
+      }
+      else {
+  $sql .= " OR ";
+      }
+      $sql .= " LOWER(search_blob) like '%$needle%' ";
+    }
+    $sql .= ")";
+  }
+  //MEDIUM SEARCH
+  $sql .= artspan_member_multivalue_field_search('medium', $mediums);
+
+  //STYLE SEARCH
+  $sql .=  artspan_member_multivalue_field_search('style', $styles);
+  
+  //WEEKEND SEARCH
+  $sql .= artspan_member_multivalue_field_search('weekend', $weekends);
+  
+  //NEIGHBORHOOD SEARCH
+  $sql .= artspan_member_single_value_field_search('neighborhood',
+               $neighborhoods);
+  //STUDIO SEARCH
+  $sql .= artspan_member_single_value_field_search('studio_building',
+               $studio_buildings);
+
+
+  $results = db_query($sql);
+  $is_first = TRUE;
+  $arg_string = '';
+  while ($result = $results->fetchObject()) {
+    if ($is_first) {
+      $is_first=FALSE;
+    }
+    else {
+      $arg_string .= "+";
+    }
+    $arg_string .= $result->uid;
+  }
+  
+  $view = views_get_view('artist_profile_search');
+
+  $view->set_arguments(array($arg_string));
+  $display = $view->execute_display('page', array($arg_string));
+ 
+  $index1 = strpos($display, '"/art');
+  $index2 = strpos($display, 'method="get"');
+
+  if ($index2 > $index1) {
+    $display = substr($display, 0, $index1) . '"/art" '.
+      substr($display, $index2);
+  }
+  $display = '<h1 id="page-title" class="page_title title">'.
+    t("Artist Directory").'</h1>'.$display;
+
+  return $display;
+
+}
+
+
+function artspan_member_single_value_field_search($type, $options){
+  
+  $key = filter_input(INPUT_GET, 'artspan_profile_search_'.$type);
+  if (!$key) {
+    return "";
+  }
+  $needle = $options[$key];
+  if (!$needle) {
+    return "";
+  }
+  
+  $index = strpos($needle, ' -- Weekend');
+  if ($index > 0) {
+    $needle = substr($needle, 0, $index);
+  }
+
+  $sql = " AND ".$type."_string like '%".$needle."%' ";
+  return $sql;
+}
+
+function artspan_member_multivalue_field_search($type, $options) {
+  $needles = array();
+  foreach($options as $key=>$label) {
+    $field_name = 'artspan_profile_'.$type.'_'.$key;
+    $value = filter_input(INPUT_GET, $field_name);
+    if ($value) {
+      $needles[] = $options[$key];
+    }
+  }
+
+  //$haystack = $profile_array[$type.'_string'];
+
+  if (!$needles) {
+    return "";
+  }
+
+  $is_first = TRUE;
+  $sql = " AND (";
+  foreach($needles as $needle) {
+    if ($is_first) {
+      $is_first = FALSE;
+    }
+    else {
+      $sql .= " OR ";
+    }
+    $needle = strtolower($needle);
+    $sql .= " LOWER(".$type."_string) like '%$needle%' ";
+  } 
+  $sql .= ") ";
+  return $sql;
+}
+
+function artspan_member_profile_array(&$profile_array) {
+  civicrm_initialize();
+  if (!isset($profile_array['uid'])) {
+    //FIXME TRY TO FIND uid from global $user or from query string
+    return;
+  }
+
+  $profile_array['search_blob'] = "";
+  $profile_array['medium_string'] = "";
+  $profile_array['style_string'] = "";
+  $profile_array['artist_statement'] = "";
+  $profile_array['pull_quote'] = "";
+  $profile_array['neighborhood_string'] = "";
+  $profile_array['neighborhoods'] = array();
+  $profile_array['weekend_string'] = "";
+  $profile_array['weekends'] = array();
+  $profile_array['studio_building_string'] = "";
+
+  $profile_array['account'] = user_load($profile_array['uid']);
+  //fetch the contact id
+  $result = civicrm_api3('UFMatch', 'get', 
+       array(
+             'sequential' => 1,
+             'uf_id' => $profile_array['account']->uid,
+             ));
+  if ($result && isset($result['values']) && isset($result['values'][0])) {
+    $profile_array['contact_id'] = $result['values'][0]['contact_id'];
+  }
+  //fetch the contact
+  if (isset($profile_array['contact_id'])) {
+    $result = civicrm_api3('Contact', 'get', 
+         array(
+         'sequential' => 1,
+         'id' => $profile_array['contact_id'],
+         ));
+
+    if ($result && isset($result['values']) && isset($result['values'][0])) {
+      $profile_array['contact'] = $result['values'][0];
+    }
+  }
+  else {
+    //can't do anything without a contact id
+    return NULL;
+  }
+  if (!isset($profile_array['display_name']) && 
+      isset($profile_array['contact'])) {
+    $profile_array['display_name'] = $profile_array['contact']['display_name'];
+    $profile_array['search_blob'] .= " ".$profile_array['display_name'];
+  }
+
+  if (!isset($profile_array['public_artist_name'])) {
+    //Public Artist Name
+    $field = 'custom_'.variable_get('artspan_member_dashboard_artist_name');
+    $profile_array['public_artist_name'] = 
+      artspan_member_dashboard_get_civi_objects('Contact', FALSE, 
+                array('id'=> 
+             $profile_array['contact_id'],
+                'return' => $field),
+            'getvalue');
+
+  }
+
+  $profile_array['search_blob'] .= $profile_array['public_artist_name'];
+
+  $profile_array['artist_statement'] = 
+    artspan_member_dashboard_get_civi_objects('Contact', FALSE, 
+                array('id'=> 
+              $profile_array['contact_id'],
+                'return' => 'custom_116'),
+                'getvalue');
+
+
+  $profile_array['pull_quote'] = 
+    artspan_member_dashboard_get_civi_objects('Contact', FALSE, 
+                array('id'=> 
+              $profile_array['contact_id'],
+                'return' => 'custom_117'),
+                'getvalue');
+
+
+
+  //look for an artwork image to display
+  $sql = 
+    "SELECT fid
+     FROM file_managed f 
+     INNER JOIN  field_data_field_image i ON f.fid = field_image_fid 
+     INNER JOIN field_data_field_artwork_artist a ON a.entity_id=i.entity_id 
+     INNER JOIN node n on n.nid=i.entity_Id
+     LEFT JOIN draggableviews_structure d ON  i.entity_id = d.entity_id 
+     WHERE field_artwork_artist_target_id = :uid
+     AND n.status = 1
+     ORDER BY d.weight DESC, n.nid ASC
+     LIMIT 1";
+
+  $result = 
+    db_query($sql, array(":uid" => $profile_array['uid']))->fetchField();
+
+  if ($result) {
+    $profile_array['image_fid'] = $result;
+  }
+
+  //look for a membership for the user
+  if (isset($profile_array['contact_id'])) {
+    $result = civicrm_api3('Membership', 'get', 
+         array(
+         'sequential' => 1,
+         'contact_id' => $profile_array['contact_id'],
+         ));
+    //set all teh membership fields on our return array
+    if ($result && isset($result['values']) && isset($result['values'][0])) {
+      $profile_array['membership_id'] = $result['values'][0]['id'];
+
+      if (isset($result['values'][0]['join_date'])) {
+  $profile_array['membership_join_date'] = 
+    $result['values'][0]['join_date'];
+      
+  $profile_array['membership_start_date'] = 
+    $result['values'][0]['start_date'];
+  
+  $profile_array['membership_end_date'] = 
+    $result['values'][0]['end_date'];
+      }
+      $profile_array['membership_name'] = 
+  $result['values'][0]['membership_name'];
+      
+      $result2 = civicrm_api3('MembershipStatus', 'get', 
+            array(
+            'sequential' => 1,
+            'id' => $result['values'][0]['status_id'],
+            ));
+      if ($result2 && isset($result2['values']) && 
+    isset($result2['values'][0])){
+       $profile_array['membership_status'] = 
+   $result2['values'][0]['label'];
+       $profile_array['membership_current'] = 
+   $result2['values'][0]['is_current_member'];
+      }
+    }
+  }
+  else {
+    $profile_array['membership_id'] = NULL;
+  }
+
+  //FETCH THE NEXT OPEN STUDIOS EVENT
+  $event_id = variable_get('artspan_member_dashboard_os_event_id', 0);
+  if ($event_id) {
+    $result = civicrm_api3('Event', 'get', 
+         array('sequential' => 1, 'id' => $event_id,));
+
+    if ($result && isset($result['values']) && $result['values']) {
+      $profile_array['os_event_title'] = $result['values'][0]['event_title'];
+      $profile_array['os_event_id'] = $event_id;
+    }
+  }
+    
+  if (!isset($profile_array['contact_id'])) {
+    return;
+  }
+  
+  //LOOK FOR A PARTICPANT RECORD FOR THE CONTACT ON THE NEXT OPEN STUDIO EVENT
+  $result = civicrm_api3('Participant', 'get', 
+       array(
+             'sequential' => 1,
+             'contact_id' => $profile_array['contact_id'],
+             'event_id' => $profile_array['os_event_id'],
+             ));
+  if ($result && isset($result['values']) && $result['values']) {
+    $profile_array['os_participant'] = $result['values'][0];
+    $profile_array['os_participant_id'] = 
+      $result['values'][0]['participant_id'];
+
+    $profile_array['os_priceset_label']=
+      $result['values'][0]['participant_fee_level'][0];
+
+    $result2 = civicrm_api3('PriceFieldValue', 'get', 
+         array(
+         'sequential' => 1,
+         'label' =>$profile_array['os_priceset_label'],
+         ));
+    if ($result2 && isset($result2['values']) && $result2['values']) {
+      $profile_array['os_priceset_field_id'] = $result2['values'][0]['id'];
+      $premium_count_var_name ='artspan_member_dashboard_premium_count_'.
+  $profile_array['os_priceset_field_id'];
+      $weekend_count_var_name= 'artspan_member_dashboard_weekend_count_'.
+  $profile_array['os_priceset_field_id'];
+      
+      $profile_array['os_premium_count'] = 
+  variable_get($premium_count_var_name,0);
+
+      $profile_array['os_weekend_count'] = 
+  variable_get($weekend_count_var_name,0);  
+    }
+  }
+
+  //IF WE HAVE A PARTICIPANT, GET STUDIO EVENTS AND THEIR GUIDE IMAGES
+  if (isset($profile_array['os_participant_id']) && 
+      $profile_array['os_participant_id']) {
+
+    //GET VIEW OF ALL THE STUDIO EVENTS TIED TO THE PARTICIPANT ID
+    $view = views_get_view('studio_event_member_dashboard_block');
+    if (!$view) {
+      drupal_set_message("Error Code 25589: Missing view:".
+       'studio_event_member_dashboard_block', 'error');
+      return;
+    }
+    $view->set_arguments(array($profile_array['os_participant_id']));
+    $view->execute();
+    $results = $view->result;
+    
+    $profile_array['studio_events'] = array();
+    $profile_array['studio_buildings'] = array();
+    $studio_event_counter = 1;
+    //LOOP OVER ALL OF THE STUDIO EVENTS
+    foreach($results as $result) {
+      global $artspan_member_profile_deleted_studio_event;
+      if (isset($artspan_member_profile_deleted_studio_event) &&
+    $artspan_member_profile_deleted_studio_event) {
+  continue;
+  $artspan_member_profile_deleted_studio_event = FALSE;
+      }
+
+      global $artspan_member_profile_refresh_studio_event;
+
+      if (isset($artspan_member_profile_refresh_studio_event) &&
+    $artspan_member_profile_refresh_studio_event) {
+  entity_get_controller('node')->resetCache(array($result->nid));
+      }
+      $studio_event = node_load($result->nid);
+
+      $artspan_member_profile_refresh_studio_event = FALSE;
+
+      $wrapper = entity_metadata_wrapper('node', $studio_event);
+
+      $weekend = $wrapper->field_studioevent_weekend->value();  
+      if ($weekend) {
+  $weekend_label = $wrapper->field_studioevent_weekend->label();
+  $profile_array['weekend_string'] .= " " . $weekend_label;
+  $profile_array['weekends'][] = $weekend_label;
+
+  $field_name = 'field_studioevent_weekend'.$weekend.'_hood';
+  $neighborhood = $wrapper->{$field_name}->label();
+  $profile_array['neighborhood_string'] .= " " . $neighborhood;
+  $profile_array['neighborhoods'][] = $neighborhood;
+      }
+      
+      $cid = $wrapper->field_studioevent_contact->value();
+      
+      $studio_building = 
+  artspan_member_dashboard_get_civi_objects('Contact', FALSE, 
+              array('id'=> $cid));
+      
+
+      $profile_array['studio_buildings'][] = $studio_building;
+      $studio_event->studio_building = $studio_building;
+      $profile_array['studio_events'][] = $studio_event;
+
+      $profile_array['studio_building_string'] .= 
+  " " . $studio_building['display_name'];
+      $profile_array['search_blob'] .= 
+  " " . $studio_building['display_name'];
+
+
+      //get medium off of studio event
+
+      $medium_field = $wrapper->field_studioevent_medium->value();  
+      if ($medium_field) {
+  $studio_event_medium = $wrapper->field_studioevent_medium->label();
+
+  $profile_array['mediums'] = isset($profile_array['mediums']) ?
+    $profile_array['mediums'] : array();
+
+  $profile_array['mediums'][] = $studio_event_medium;
+  $profile_array['search_blob'] .= " " . $studio_event_medium;
+  $profile_array['medium_string'] .= "  " . $studio_event_medium;
+  $profile_array['studio_event_medium'] = $studio_event_medium;
+      }
+
+      //SET STUDIO EVENT AND TIFF NID SO LATER WE CAN USE CACHE TABLE TO 
+      //FIND PEOPLE WITH INCOMPLETE REGISTRATIONS
+
+      $var = 'studio_event_'.$studio_event_counter.'_nid';
+      $profile_array[$var] = $studio_event->nid;
+      $guide_varname = 'guide_image_'.$studio_event_counter.'_nid';  
+      $studio_event_counter++;
+      
+      $img_view = views_get_view('studio_event_guide_image_view_field');
+      if (!$img_view) {
+  drupal_set_message("Error Code 17889: Missing view:".
+         'studio_event_guide_image_view_field', 'error');
+  return;
+      }
+      $img_view->set_arguments(array($result->nid));
+      $img_view->execute();
+      $img_results = $img_view->result;
+
+      if ($img_results) {
+  foreach($img_results as $img_result) {
+    $profile_array[$guide_varname] = $img_result->nid;
+  }
+      }
+    }
+  }
+
+  //FIXME: ADD TO TEH SETTINGS FORM
+  $field = 'custom_'.variable_get('artspan_member_dashboard_mediums', 87);
+  $profile_array['mediums'] = isset($profile_array['mediums']) ?
+    $profile_array['mediums'] : array();
+
+  $contact_mediums =
+    artspan_member_dashboard_get_civi_objects('Contact', FALSE, 
+                array('id'=> 
+             $profile_array['contact_id'],
+                'return' => $field),
+                'getvalue');
+  if ($contact_mediums) {
+    foreach($contact_mediums as $key => $medium) {
+      //FIXME FIND WAY TO GET DATA LABELS RATHER THAN VALUES
+      if (strpos(strtolower($medium), 'wearable') === 0) {
+  $medium = 'Wearable Art / Jewelry';
+      }
+      else {
+  $medium = ucwords(str_replace('-', ' ', $medium));
+      }
+   
+      $contact_mediums[$key] = $medium;
+      $profile_array['search_blob'] .= " " . $medium;
+      $profile_array['medium_string'] .= "  " . $medium;
+    }
+    $profile_array['mediums'] =
+      array_merge($profile_array['mediums'], $contact_mediums);
+  }
+
+  
+  //FIXME: ADD TO TEH SETTINGS FORM
+  $field = 'custom_'.variable_get('artspan_member_dashboard_primary_mediums', 
+          69);
+  $primary_mediums = 
+    artspan_member_dashboard_get_civi_objects('Contact', FALSE, 
+                array('id'=> 
+            $profile_array['contact_id'],
+                'return' => $field),
+                'getvalue');
+  if (!is_array($primary_mediums)) {
+    $primary_mediums = array($primary_mediums);
+  }
+
+  foreach($primary_mediums as $primary_medium) {
+    //FIXME FIND WAY TO GET DATA LABELS RATHER THAN VALUES
+    if (strpos(strtolower($primary_medium), 'wearable') === 0) {
+      $primary_medium = 'Wearable Art / Jewelry';
+    }
+    else {
+      $primary_medium = ucwords(str_replace('-', ' ', $primary_medium));
+    }
+    $profile_array['search_blob'] .= " " . $primary_medium;
+    $profile_array['medium_string'] .= "  " . $primary_medium ;
+    $profile_array['mediums'][] = $primary_medium;    
+    $profile_array['primary_medium'] = $primary_medium;
+  }
+  $profile_array['mediums'] = array_unique($profile_array['mediums']);
+
+  //FIXME: ADD TO TEH SETTINGS FORM
+  $field = 'custom_'.variable_get('artspan_member_dashboard_styles', 88);
+  $profile_array['styles'] = 
+    artspan_member_dashboard_get_civi_objects('Contact', FALSE, 
+                array('id'=> 
+            $profile_array['contact_id'],
+                'return' => $field),
+                'getvalue');
+  if ($profile_array['styles']) {
+    foreach($profile_array['styles'] as $style) {
+      $profile_array['search_blob'] .= "  " . $style;
+      $profile_array['style_string'] .= "  " . $style;
+    }
+  }
+
+  $artspan_profiles['uid'] = $profile_array;
+}
+/**
+ * This function use to populate the cache for all artists, now caching is done
+ * for a single artist whenever they change information related to things
+ * exposed in search
+ */
+function artspan_member_profile_search_cache() {
+  return;
+}
+
+/**
+ * Funciton will look in the cache for a  profile array, if it doesn't find it
+ * it will create teh array and store it as a global
+ */
+function artspan_member_profile_get_single_profile_cache($uid) {
+  global $artspan_profile;
+
+  if (!isset($artspan_profile) || !$artspan_profile) {
+
+    $artspan_profile = array();
+    $artspan_profile['uid'] = $uid;
+    artspan_member_profile_array($artspan_profile);
+  }
+  return $artspan_profile;
+}
+
+/**
+ * View field on teh artist_public_profile_page view
+ */
+function artspan_member_profile_weekend_text($row, $position) {
+  $profile_array = artspan_member_profile_get_single_profile_cache($row->uid);
+  $index = ($position == 'first') ? 0 : 1; 
+  $weekend = strtoupper($profile_array['weekends'][$index]);
+  if ($weekend) {
+    $ret = '<div class="artspan_profile_separator" align="center">_____</div>';
+    $weekend = str_replace('OCTOBER', 'OCT', $weekend);
+    $weekend = str_replace('NOVEMBER', 'NOV', $weekend);
+    //$weekend = str_replace(' & ', '/', $weekend);
+    $weekend = str_replace(' AND ', ' & ', $weekend);
+
+    $ret .= "<div id='artspan_studio_event_weekend_info'>SF OPEN STUDIOS<br/>";
+    $neighborhood = $profile_array['neighborhoods'][$index];
+    $studio_contact = $profile_array['studio_buildings'][$index];
+    $studio_event = $profile_array['studio_events'][$index];
+    $room_number = 
+      artspan_member_dashboard_get_single_field_value($studio_event, 
+           'field_studioevent_room_num');
+
+
+    $ret .= strtoupper(str_replace(':', ': '.$neighborhood."<br/>",$weekend));
+    $ret .= "</div><div id='artspan_studio_event_name'>";
+    if ($studio_contact['display_name'] != $studio_contact['street_address']){
+      $ret .= $studio_contact['display_name']."<br/>";
+    }
+    $ret .= "</div><div id='artspan_studio_event_location_info'>";
+    $ret .= $studio_contact['street_address'];
+    $ret .= $room_number ? " Room #".$room_number : "";
+    $ret .= "<br/>";
+    $ret .= $studio_contact['city'] . ', CA ' . $studio_contact['postal_code'].
+      "</div>";
+    $ret .='<div class="artspan_profile_separator" align="center">_____</div>';
+  }
+  else {
+    $ret = "";
+  }
+
+  return $ret;
+}
+
+
+function artspan_member_profile_public_featured_artwork_field($row) {
+  //look for an artwork images to display
+  $sql = 
+    "SELECT fid
+     FROM file_managed f 
+     INNER JOIN  field_data_field_image i ON f.fid = field_image_fid 
+     INNER JOIN field_data_field_artwork_artist a ON a.entity_id=i.entity_id 
+     INNER JOIN node n on n.nid=i.entity_Id
+     LEFT JOIN draggableviews_structure d ON  i.entity_id = d.entity_id 
+     WHERE field_artwork_artist_target_id = :uid
+     AND n.status = 1
+     ORDER BY d.weight DESC, n.nid ASC
+     LIMIT 1";
+  $fid = db_query($sql, array(':uid' => $row->uid))->fetchField(); 
+  $file = file_load($fid);
+
+  $image = '';
+  if ($fid && $file) {
+    $image =  theme('image_style', array('path' => $file->uri, 
+           'alt' => t('Missing Image'), 
+           'style_name' => 'header_image_xxxl'));
+  }
+  else {
+    $path ='sites/default/files/default_images/header-art-artwork-default.jpg';
+    $image = theme_image(array('path'=>$path));
+
+  }
+  return $image;
+}
+
+/**
+ * Function defines the artist profile page
+ */
+function artspan_member_profile_page() {
+  $user = user_load_by_name(arg(1));
+  if (!$user) {
+    return '';
+  }
+  $type = "Viewing Artist Profile";
+  artspan_member_profile_cache_single($user->uid, $type);
+
+  $header = views_embed_view('artist_profile_featured_image','default', $user->name);
+
+  $artist_info_block  = views_embed_view('artist_public_profile_page','page', $user->name);
+
+  $image_block = views_embed_view('profile_artwork','block', $user->uid);
+
+  $content = 
+    "<div id='artspan_profile_page_content'>
+       <div id='artspan_profile_header'>$header</div>
+       <div id='artspan_profile_body'>
+         <div id='artspan_profile_info_block'>$artist_info_block</div>
+         <div id='artspan_profile_image_block'>$image_block</div>
+       </div>
+     </div>";
+
+  return $content;
+
+}
+
+/**
+ * This function will flush then rebuild the cache for a single user
+ */
+function artspan_member_profile_cache_single($uid, $type='unknown') {
+  $start = strtotime('now');
+
+  $profile_array = array();
+  $profile_array['uid'] = $uid;
+  artspan_member_profile_array($profile_array);
+
+  $valid_statuses = array(
+        "New", //1 
+        "Current", //2
+        "Grace", //3
+        //"Expired", //4
+        //"Pending", //5
+        //"Cancelled", //6
+        //"Deceased", //7
+        );
+  
+  $valid_membership = 
+    in_array($profile_array['membership_status'], $valid_statuses);
+
+  $artist_role_id = 3;
+  $is_artist =  isset($profile_array['account']->roles[$artist_role_id]);
+
+  $should_insert_cache = TRUE;
+  if (!$valid_membership && !$is_artist) {
+    //not a member and not an artist, don't cache them
+    $should_insert_cache = FALSE;
+  }
+
+
+  if (!$profile_array) {
+    //if we coudln't find a profile array skip to next uid
+    //continue;
+  }
+  $sql = 
+    "INSERT INTO {artspan_member_profile_cache}
+     (uid, display_name, public_artist_name, image_fid, search_blob,
+      medium_string, primary_medium,studio_event_medium,style_string,
+      artist_statement,pull_quote,neighborhood_string,weekend_string,         
+      studio_building_string,contact_id, os_event_title,os_event_id,
+      os_participant_id,membership_id,membership_join_date,
+      membership_start_date,membership_end_date,membership_name,
+      membership_status,membership_current,os_priceset_label,
+      os_priceset_field_id,os_premium_count,os_weekend_count,
+      studio_event_1_nid, studio_event_2_nid, guide_image_1_nid,
+      guide_image_2_nid)
+     VALUES
+     (:uid, :display_name, :public_artist_name, :image_fid, :search_blob,
+      :medium_string,:primary_medium,:studio_event_medium,:style_string,
+      :artist_statement,:pull_quote,:neighborhood_string,:weekend_string,
+      :studio_building_string,:contact_id, :os_event_title,:os_event_id,
+      :os_participant_id,:membership_id,:membership_join_date,
+      :membership_start_date,:membership_end_date,:membership_name,
+      :membership_status,:membership_current,:os_priceset_label,
+      :os_priceset_field_id,:os_premium_count,:os_weekend_count,
+      :studio_event_1_nid, :studio_event_2_nid, :guide_image_1_nid,
+      :guide_image_2_nid)
+      ";
+  $args = 
+    array(
+    ":uid"=> $profile_array['uid'], 
+    ":display_name" => isset($profile_array['display_name']) ? 
+    $profile_array['display_name'] : '', 
+    ":public_artist_name" => isset($profile_array['public_artist_name']) 
+    ? $profile_array['public_artist_name'] : '', 
+    ":image_fid" => isset($profile_array['image_fid']) ? 
+    $profile_array['image_fid'] : 0, 
+    ":search_blob" => isset($profile_array['search_blob']) ? 
+    $profile_array['search_blob'] : '',
+    ":medium_string" => isset($profile_array['medium_string']) ? 
+    $profile_array['medium_string'] : '',
+    ":primary_medium"=> isset($profile_array['primary_medium']) ? 
+    $profile_array['primary_medium'] : '',
+    ":studio_event_medium"=> isset($profile_array['studio_event_medium'])
+    ? $profile_array['studio_event_medium'] : '',
+    ":style_string" => isset($profile_array['style_string']) ? 
+    $profile_array['style_string'] : '',
+    ":artist_statement" => isset($profile_array['artist_statement']) ? 
+    $profile_array['artist_statement'] : '',
+    ":pull_quote" => isset($profile_array['pull_quote']) ? 
+    $profile_array['pull_quote'] : '',
+    ":neighborhood_string" => 
+    isset($profile_array['neighborhood_string']) ? 
+    $profile_array['neighborhood_string'] : '',
+    ":weekend_string" => isset($profile_array['weekend_string']) ? 
+    $profile_array['weekend_string'] : '',         
+    ":studio_building_string" => 
+    isset($profile_array['studio_building_string']) ? 
+    $profile_array['studio_building_string'] : '',
+    ":contact_id" => isset($profile_array['contact_id']) ? 
+    $profile_array['contact_id'] : 0, 
+    ":os_event_title" => isset($profile_array['os_event_title']) ? 
+    $profile_array['os_event_title'] : '',
+    ":os_event_id" => isset($profile_array['os_event_id']) ? 
+    $profile_array['os_event_id'] : 0,
+    ":os_participant_id" => isset($profile_array['os_participant_id']) 
+    ? $profile_array['os_participant_id'] : 0,
+    ":membership_id" => isset($profile_array['membership_id']) ? 
+    $profile_array['membership_id'] : 0,
+    ":membership_join_date" => 
+    isset($profile_array['membership_join_date']) ? 
+    $profile_array['membership_join_date'] : '',
+    ":membership_start_date" => 
+    isset($profile_array['membership_start_date']) ? 
+    $profile_array['membership_start_date'] : '',
+    ":membership_end_date" => 
+    isset($profile_array['membership_end_date']) ? 
+    $profile_array['membership_end_date'] : '',
+    ":membership_name" => isset($profile_array['membership_name']) ? 
+    $profile_array['membership_name'] : '',
+    ":membership_status" => isset($profile_array['membership_status']) ? 
+    $profile_array['membership_status'] : '',
+    ":membership_current" => isset($profile_array['membership_current'])
+    ? $profile_array['membership_current'] : '',
+    ":os_priceset_label" => isset($profile_array['os_priceset_label']) ? 
+    $profile_array['os_priceset_label'] : '',
+    ":os_priceset_field_id" => 
+    isset($profile_array['os_priceset_field_id']) ? 
+    $profile_array['os_priceset_field_id'] : 0,
+    ":os_premium_count" => isset($profile_array['os_premium_count']) ? 
+    $profile_array['os_premium_count'] : 0,
+    ":os_weekend_count" => isset($profile_array['os_weekend_count']) ? 
+    $profile_array['os_weekend_count'] : 0,
+
+    ":studio_event_1_nid"=>isset($profile_array['studio_event_1_nid'])?
+    $profile_array['studio_event_1_nid'] : 0, 
+          ":studio_event_2_nid"=>isset($profile_array['studio_event_2_nid'])?
+    $profile_array['studio_event_2_nid'] : 0, 
+          ":guide_image_1_nid" =>isset($profile_array['guide_image_1_nid']) ?
+    $profile_array['guide_image_1_nid'] : 0,
+          ":guide_image_2_nid" =>isset($profile_array['guide_image_2_nid']) ?
+    $profile_array['guide_image_2_nid'] : 0,
+    );
+  
+  db_query("DELETE FROM {artspan_member_profile_cache} WHERE uid=:uid", 
+     array(':uid' => $args[':uid']));
+  if ($should_insert_cache) {
+    db_query($sql, $args);
+    $note = "Deleted and Inserted";
+  }
+  else {
+    $note = "Deleted Only! Is Member? $valid_membership Is Artist? $is_artist";
+  }
+  
+  $end = strtotime('now');
+  $msg = "--------------------------------------- <br/>";
+  $msg .= "Caching for trigger type: $type <br/>";
+  $msg .= "Started at " . date('H:i:s', $start);
+  $msg .= " and ran for " . ($end - $start) . " seconds. <br/>";
+  $msg .= " Action: $note <br/>";
+  $msg .= "If Action includes 'Insert' the following was inserted into DB:";
+
+  //dsm($args, $msg);
+}
+
+function artspan_member_profile_user_update(&$edit, $account, $category) {
+  artspan_member_profile_cache_single($account->uid, "Updated User/Login");
+}
+
+function artspan_member_profile_civicrm_post($op, $objectName, $objectId, 
+               &$objectRef ) {
+
+  $type = "civicrm post hook: $op obname: $objectName obID: $objectId";
+
+  if ($objectName == 'Individual') {
+    $result = civicrm_api3('UFMatch', 'get', 
+         array(
+         'sequential' => 1,
+         'contact_id' => $objectId,
+         ));
+    if ($result && isset($result['values']) && isset($result['values'][0])) {
+      $uid = $result['values'][0]['uf_id'];
+      artspan_member_profile_cache_single($uid, $type);
+    }
+    
+  }
+}
+
+function artspan_member_profile_webform_submission_insert($node, $submission){
+  $type = "Webform Insert";
+  artspan_member_profile_webform_cache_update($node, $submission, $type);
+}
+
+function artspan_member_profile_webform_submission_update($node, $submission){
+  $type = "Webform Update";
+  artspan_member_profile_webform_cache_update($node, $submission, $type);
+}
+
+function artspan_member_profile_webform_cache_update($node, $submission,$type){
+  if ($submission->uid) {
+    artspan_member_profile_cache_single($submission->uid, $type);
+  }
+}
+
+function artspan_member_profile_node_insert($node) {
+  $type = "Node Insert ".$node->title. "(".$node->nid.")";
+  artspan_member_profile_studio_event_cache_update($node, $type);
+}
+
+function artspan_member_profile_node_update($node) {
+  $type = "Node Update ".$node->title. "(".$node->nid.")";
+  artspan_member_profile_studio_event_cache_update($node, $type);
+}
+
+function artspan_member_profile_node_delete($node) {
+  global $artspan_member_profile_deleted_studio_event;
+  $artspan_member_profile_deleted_studio_event = TRUE;
+  
+  $type = "Node Update ".$node->title. "(".$node->nid.")";
+  artspan_member_profile_studio_event_cache_update($node, $type);
+}
+
+function artspan_member_profile_studio_event_cache_update($node, $type) {
+  if ($node->type == 'studio_event' ||
+      $node->type == 'artwork') {
+    global $artspan_member_profile_refresh_studio_event;
+    $artspan_member_profile_refresh_studio_event = TRUE;
+    artspan_member_profile_cache_single($node->uid, $type);
+  }
+}
+
+function artspan_member_profile_artwork_reordering_cache() {
+  $uid = arg(3);
+  
+  $user = user_load($uid);
+  if ($user) {
+    $type = "Reordering Images";
+    artspan_member_profile_cache_single($uid, $type);
+  }
+}

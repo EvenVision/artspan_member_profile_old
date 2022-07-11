@@ -1,0 +1,48 @@
+<?php
+
+function artspan_member_profile_install() {
+  $sql = "
+    CREATE TABLE artspan_member_profile_cache (
+    uid int(11) NOT NULL,  
+    display_name varchar(128)  , 
+    public_artist_name varchar(255),
+    image_fid int(11),
+    search_blob text,
+    medium_string text,
+    primary_medium varchar(255),
+    studio_event_medium varchar(255),
+    style_string text,
+    artist_statement text,
+    pull_quote text,
+    neighborhood_string text,
+    weekend_string text,
+    studio_building_string text,
+    contact_id int(11),
+    os_event_title varchar(255),
+    os_event_id int(11),
+    os_participant_id int(11),
+    membership_id int(11),
+    membership_join_date varchar(255),
+    membership_start_date varchar(255),
+    membership_end_date varchar(255),
+    membership_name varchar(255),
+    membership_status varchar(255),
+    membership_current varchar(255),
+    os_priceset_label varchar(255),
+    os_priceset_field_id int(11),
+    os_premium_count int(11),
+    os_weekend_count int(11),
+    studio_event_1_nid int(11),
+    studio_event_2_nid int(11),
+    guide_image_1_nid int(11),
+    guide_image_2_nid int(11),
+    PRIMARY KEY  (uid)
+    ) ENGINE=MyISAM DEFAULT CHARSET=utf8;
+";
+  db_query($sql);
+}
+
+
+function artspan_member_profile_uninstall() {
+  db_query("DROP TABLE IF EXISTS artspan_member_profile_cache");
+}

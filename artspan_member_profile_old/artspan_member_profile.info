@@ -1,0 +1,7 @@
+name = Artspan Member Profile
+description = Provides all the functionality for the Artspan Member Profiles
+package = Artspan
+dependencies[] = artspan_member_dashboard
+core = 7.x
+php = 5.2
+
